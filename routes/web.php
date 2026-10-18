@@ -1,23 +1,19 @@
 <?php
 
-use App\Http\Controllers\DescubrimientoController;
-use App\Http\Controllers\LoginController;
-use App\Http\Controllers\LogoutController;
-use App\Http\Middleware\VerificarMatricula;
+use App\Http\Controllers\Api\AutorizacionController;
+use App\Http\Controllers\Api\SesionController;
 use Illuminate\Support\Facades\Route;
-use Laravel\Passport\Http\Controllers\AuthorizationController;
 
-Route::redirect('/', '/login');
-
-Route::get('/login', [LoginController::class, 'show'])->name('login');
-Route::post('/login', [LoginController::class, 'store'])->name('login.store');
-Route::match(['get', 'post'], '/logout', LogoutController::class)->name('logout');
-
-// Solo los endpoints OAuth que usa la arquitectura (Passport::ignoreRoutes() en AppServiceProvider).
-// POST /oauth/token se registra en bootstrap/app.php, fuera del grupo web (sin sesión ni CSRF).
-Route::get('/oauth/authorize', [AuthorizationController::class, 'authorize'])
-    ->middleware(VerificarMatricula::class)
-    ->name('passport.authorizations.authorize');
-
-Route::get('/.well-known/jwks.json', [DescubrimientoController::class, 'jwks'])->name('jwks');
-Route::get('/.well-known/openid-configuration', [DescubrimientoController::class, 'configuracion'])->name('openid');
+/*
+ * Endpoints que usa identidad-web (Angular) desde el navegador. Van en el grupo "web"
+ * porque necesitan la cookie de sesión SSO y protección CSRF (cookie XSRF-TOKEN que Angular
+ * reenvía en la cabecera X-XSRF-TOKEN). Responden siempre JSON.
+ *
+ * Los endpoints servidor a servidor (token, JWKS, descubrimiento) están en bootstrap/app.php, sin sesión.
+ */
+Route::prefix('api')->group(function () {
+    Route::get('/sesion', [SesionController::class, 'show'])->name('sesion');
+    Route::post('/login', [SesionController::class, 'login'])->name('login');
+    Route::post('/logout', [SesionController::class, 'logout'])->name('logout');
+    Route::get('/authorize', AutorizacionController::class)->name('authorize');
+});

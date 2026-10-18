@@ -15,14 +15,15 @@ class DescubrimientoController extends Controller
 
     public function configuracion(): JsonResponse
     {
-        $iss = config('identidad.issuer');
+        $web = config('identidad.issuer');   // identidad-web (Angular)
+        $api = config('identidad.api_url');  // esta API
 
         return response()->json([
-            'issuer' => $iss,
-            'authorization_endpoint' => $iss.'/oauth/authorize',
-            'token_endpoint' => $iss.'/oauth/token',
-            'jwks_uri' => $iss.'/.well-known/jwks.json',
-            'end_session_endpoint' => $iss.'/logout',
+            'issuer' => $web,
+            'authorization_endpoint' => $web.'/authorize',
+            'end_session_endpoint' => $web.'/logout',
+            'token_endpoint' => $api.'/oauth/token',
+            'jwks_uri' => $api.'/jwks.json',
             'response_types_supported' => ['code'],
             'grant_types_supported' => ['authorization_code', 'refresh_token'],
             'code_challenge_methods_supported' => ['S256'],

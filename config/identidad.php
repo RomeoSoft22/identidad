@@ -1,8 +1,12 @@
 <?php
 
 return [
-    // Valor del claim "iss" de los JWT. En producción: https://identidad.juarezcampos.net
-    'issuer' => rtrim(env('IDENTIDAD_ISSUER', env('APP_URL', 'http://localhost')), '/'),
+    // URL pública de identidad-web (Angular). Es el "iss" de los JWT y donde viven /authorize y /logout.
+    // En producción: https://identidad.juarezcampos.net
+    'issuer' => rtrim(env('IDENTIDAD_ISSUER', 'http://localhost:4300'), '/'),
+
+    // URL pública de esta API. En producción: https://identidad.juarezcampos.net/api
+    'api_url' => rtrim(env('IDENTIDAD_API_URL', rtrim(env('APP_URL', 'http://localhost'), '/').'/api'), '/'),
 
     // Fallos de contraseña consecutivos antes de bloquear la cuenta.
     'max_intentos' => (int) env('IDENTIDAD_MAX_INTENTOS', 10),
