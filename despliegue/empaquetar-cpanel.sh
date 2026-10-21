@@ -130,7 +130,7 @@ printf '{\n  "identidadUrl": "https://%s",\n  "identidadApiUrl": "https://%s/api
 
 # ------------------------------------------------------------------ 4. ISTQB
 paso "4/6 ISTQB ($URL_ISTQB)"
-(cd "$BASE/istqb-web" && npx ng build --configuration production --base-href /istqb/ >/dev/null)
+(cd "$BASE/istqb-web" && MSYS_NO_PATHCONV=1 npx ng build --configuration production --base-href /istqb/ >/dev/null)
 mkdir -p "$C/public_html/istqb"
 cp -r "$BASE/istqb-web/dist/web/browser/." "$C/public_html/istqb/"
 cp "$BASE/istqb-web/public/.htaccess" "$C/public_html/istqb/.htaccess"
