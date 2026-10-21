@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('api')->group(function () {
     Route::get('/sesion', [SesionController::class, 'show'])->name('sesion');
     Route::post('/login', [SesionController::class, 'login'])->name('login');
+    Route::post('/login/verificar', [SesionController::class, 'verificarCodigo'])->name('login.verificar');
     Route::post('/logout', [SesionController::class, 'logout'])->name('logout');
     Route::get('/authorize', AutorizacionController::class)->name('authorize');
 });

@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\EventoAuditoria;
+use App\Models\SesionSso;
 use App\Models\Sistema;
-use App\Models\User;
+use App\Models\Usuario;
 use App\Support\Auditoria;
 use App\Support\Bloqueo;
+use App\Support\SesionesSso;
+use App\Support\VerificacionCorreo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,12 +25,17 @@ use Illuminate\Support\Str;
 class SesionController extends Controller
 {
     public const ERROR_GENERICO = 'El correo o la contraseña no son correctos. Revísalos e inténtalo de nuevo.';
-    public const CUENTA_BLOQUEADA = 'Tu cuenta está bloqueada por seguridad. Pide al administrador que la desbloquee.';
-    public const CUENTA_RECIEN_BLOQUEADA = 'Por seguridad, bloqueamos tu cuenta después de :n intentos fallidos. Pide al administrador que la desbloquee.';
+
+    // Solo lo ve quien escribió la contraseña correcta de una cuenta bloqueada.
+    public const VERIFICACION_REQUERIDA = 'Por seguridad necesitamos confirmar que eres tú. Te enviamos un código de 6 dígitos a :correo.';
+
+    public const CODIGO_INCORRECTO = 'El código no es correcto. Revísalo e inténtalo de nuevo.';
+
+    public const CODIGO_VENCIDO = 'El código venció o ya no es válido. Vuelve a ingresar tu contraseña para recibir uno nuevo.';
 
     public function show(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = SesionesSso::usuarioVigente($request);
 
         return $user
             ? response()->json(['usuario' => $this->usuario($user)])
@@ -39,6 +47,9 @@ class SesionController extends Controller
         $datos = $request->validate([
             'email' => ['required', 'string', 'email', 'max:255'],
             'password' => ['required', 'string', 'max:255'],
+            // Los envía el navegador (identidad-web) para la auditoría de la sesión.
+            'zona_horaria' => ['nullable', 'string', 'max:60', 'timezone:all'],
+            'idioma' => ['nullable', 'string', 'max:35', 'regex:/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/'],
         ], [
             'email.required' => 'Escribe tu correo electrónico.',
             'email.email' => 'Escribe un correo válido, por ejemplo nombre@juarezcampos.net.',
@@ -49,42 +60,100 @@ class SesionController extends Controller
         // Límite por IP: frena pruebas masivas contra muchas cuentas y el bloqueo intencional de cuentas ajenas.
         $claveIp = 'login-ip:'.$request->ip();
         if (RateLimiter::tooManyAttempts($claveIp, config('identidad.login_por_minuto_ip'))) {
-            Auditoria::registrar(EventoAuditoria::LIMITE_IP, email: $email);
+            Auditoria::registrar(EventoAuditoria::LIMITE_IP, correo: $email);
 
             return $this->error('limite', 'Hubo demasiados intentos desde tu conexión. Espera '.RateLimiter::availableIn($claveIp).' segundos y vuelve a intentarlo.', 429);
         }
         RateLimiter::hit($claveIp, 60);
 
-        $user = User::where('email', $email)->first();
+        $user = Usuario::where('correo', $email)->first();
 
         // Mismo trabajo de hash exista o no el correo, para no revelar qué cuentas existen por el tiempo de respuesta.
-        $passwordCorrecta = Hash::check($datos['password'], $user?->password ?? '$2y$12$'.str_repeat('x', 53));
+        $passwordCorrecta = Hash::check($datos['password'], $user?->contrasena ?? '$2y$12$'.str_repeat('x', 53));
 
-        if (! $user || $user->estado === User::BAJA) {
-            Auditoria::registrar(EventoAuditoria::LOGIN_FALLIDO, $user, email: $email, detalle: ['motivo' => $user ? 'baja' : 'no_existe']);
+        if (! $user || $user->estado === Usuario::BAJA) {
+            Auditoria::registrar(EventoAuditoria::LOGIN_FALLIDO, $user, correo: $email, detalle: ['motivo' => $user ? 'baja' : 'no_existe']);
 
             return $this->error('credenciales', self::ERROR_GENERICO);
         }
 
-        if ($user->estaBloqueado()) {
-            Auditoria::registrar(EventoAuditoria::INGRESO_CUENTA_BLOQUEADA, $user);
+        $contexto = [
+            'zona_horaria' => $datos['zona_horaria'] ?? null,
+            'idioma' => $datos['idioma'] ?? (substr((string) $request->getPreferredLanguage(), 0, 35) ?: null),
+        ];
 
-            // El aviso de bloqueo solo se muestra a quien conoce la contraseña.
-            return $passwordCorrecta
-                ? $this->error('bloqueada', self::CUENTA_BLOQUEADA, 423)
-                : $this->error('credenciales', self::ERROR_GENERICO);
+        if ($user->estaBloqueado()) {
+            Auditoria::registrar(EventoAuditoria::INGRESO_CUENTA_BLOQUEADA, $user, detalle: ['contrasena_correcta' => $passwordCorrecta]);
+
+            // Quien no conoce la contraseña nunca se entera de que la cuenta está bloqueada.
+            if (! $passwordCorrecta) {
+                return $this->error('credenciales', self::ERROR_GENERICO);
+            }
+
+            // Contraseña correcta: segundo factor por correo para desbloquear.
+            if (! VerificacionCorreo::enviar($user, $request, $contexto)) {
+                return $this->error('limite', 'Ya enviamos varios códigos a tu correo. Revisa tu bandeja (y la de spam) o espera una hora.', 429);
+            }
+
+            return response()->json([
+                'codigo' => 'verificacion_requerida',
+                'message' => str_replace(':correo', VerificacionCorreo::enmascarar($user->correo), self::VERIFICACION_REQUERIDA),
+                'correo' => VerificacionCorreo::enmascarar($user->correo),
+            ], 423);
         }
 
         if (! $passwordCorrecta) {
-            return Bloqueo::registrarFallo($user)
-                ? $this->error('bloqueada', str_replace(':n', (string) config('identidad.max_intentos'), self::CUENTA_RECIEN_BLOQUEADA), 423)
-                : $this->error('credenciales', self::ERROR_GENERICO);
+            // Mismo mensaje aunque este fallo bloquee la cuenta: no se revela la política de bloqueo.
+            Bloqueo::registrarFallo($user);
+
+            return $this->error('credenciales', self::ERROR_GENERICO);
         }
 
-        $user->forceFill(['intentos_fallidos' => 0, 'ultimo_ingreso' => now()])->save();
+        return $this->completarIngreso($user, $request, $contexto);
+    }
+
+    /** Segundo paso de una cuenta bloqueada: el código de 6 dígitos que llegó al correo. */
+    public function verificarCodigo(Request $request): JsonResponse
+    {
+        $datos = $request->validate(['codigo' => ['required', 'string', 'regex:/^\d{6}$/']], [
+            'codigo.required' => 'Escribe el código de 6 dígitos.',
+            'codigo.regex' => 'El código tiene 6 dígitos.',
+        ]);
+
+        $claveIp = 'login-ip:'.$request->ip();
+        if (RateLimiter::tooManyAttempts($claveIp, config('identidad.login_por_minuto_ip'))) {
+            return $this->error('limite', 'Hubo demasiados intentos desde tu conexión. Espera '.RateLimiter::availableIn($claveIp).' segundos y vuelve a intentarlo.', 429);
+        }
+        RateLimiter::hit($claveIp, 60);
+
+        [$resultado, $user, $contexto] = VerificacionCorreo::verificar($request, $datos['codigo']);
+
+        return match ($resultado) {
+            'ok' => $this->desbloquearEIngresar($user, $request, $contexto),
+            'incorrecto' => $this->error('codigo_incorrecto', self::CODIGO_INCORRECTO),
+            default => $this->error('codigo_vencido', self::CODIGO_VENCIDO, 410),
+        };
+    }
+
+    private function desbloquearEIngresar(Usuario $user, Request $request, array $contexto): JsonResponse
+    {
+        if ($user->estado === Usuario::BAJA) {
+            return $this->error('credenciales', self::ERROR_GENERICO);
+        }
+        if ($user->estaBloqueado()) {
+            Bloqueo::desbloquear($user, via: 'codigo_correo');
+        }
+
+        return $this->completarIngreso($user, $request, $contexto);
+    }
+
+    private function completarIngreso(Usuario $user, Request $request, array $contexto): JsonResponse
+    {
+        $user->forceFill(['intentos_fallidos' => 0])->save();
         Auth::login($user);
         $request->session()->regenerate();
-        Auditoria::registrar(EventoAuditoria::LOGIN_EXITOSO, $user);
+        $sesion = SesionesSso::iniciar($user, $request, $contexto['zona_horaria'] ?? null, $contexto['idioma'] ?? null);
+        Auditoria::registrar(EventoAuditoria::LOGIN_EXITOSO, $user, sesion: $sesion);
 
         return response()->json(['usuario' => $this->usuario($user)]);
     }
@@ -98,9 +167,10 @@ class SesionController extends Controller
         if ($user = $request->user()) {
             Bloqueo::revocarTokens($user);
             Auditoria::registrar(EventoAuditoria::LOGOUT, $user);
-            Auth::guard('web')->logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
+            if ($sesion = SesionesSso::actual()) {
+                SesionesSso::cerrar($sesion, SesionSso::CIERRE_LOGOUT);
+            }
+            SesionesSso::salirDelNavegador($request);
         }
 
         $destino = (string) $request->input('post_logout_redirect_uri', '');
@@ -114,9 +184,9 @@ class SesionController extends Controller
             ->contains(fn (string $base) => $destino === rtrim($base, '/') || Str::startsWith($destino, rtrim($base, '/').'/'));
     }
 
-    private function usuario(User $user): array
+    private function usuario(Usuario $user): array
     {
-        return ['nombre' => $user->name, 'email' => $user->email];
+        return ['nombre' => $user->nombreCompleto(), 'email' => $user->correo];
     }
 
     private function error(string $codigo, string $mensaje, int $estado = 422): JsonResponse

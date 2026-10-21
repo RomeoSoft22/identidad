@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\EventoAuditoria;
 use App\Models\Sistema;
-use App\Models\User;
 use App\Support\Auditoria;
+use App\Support\SesionesSso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Laravel\Passport\Bridge\User as UsuarioOAuth;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -42,12 +42,8 @@ class AutorizacionController extends Controller
         }
         $datosSistema = ['codigo' => $sistema->codigo, 'nombre' => $sistema->nombre];
 
-        /** @var User|null $user */
-        $user = $request->user();
-        if ($user && $user->estado !== User::ACTIVO) {
-            Auth::guard('web')->logout();
-            $user = null;
-        }
+        // Exige cuenta activa y sesión SSO vigente (no cerrada, vencida ni revocada).
+        $user = SesionesSso::usuarioVigente($request);
         if (! $user) {
             return response()->json(['codigo' => 'login_requerido', 'sistema' => $datosSistema], 401);
         }
@@ -58,7 +54,7 @@ class AutorizacionController extends Controller
             return response()->json([
                 'codigo' => 'sin_acceso',
                 'sistema' => $datosSistema,
-                'usuario' => ['nombre' => $user->name, 'email' => $user->email],
+                'usuario' => ['nombre' => $user->nombreCompleto(), 'email' => $user->correo],
             ], 403);
         }
 
@@ -71,15 +67,19 @@ class AutorizacionController extends Controller
             return $this->solicitudInvalida($e->getMessage());
         }
 
+        SesionesSso::registrarAcceso($user, $sistema, $request);
+
         return response()->json(['redirect_to' => $respuesta->getHeaderLine('Location'), 'sistema' => $datosSistema]);
     }
 
     private function solicitudInvalida(string $detalle): JsonResponse
     {
+        // El motivo técnico (de la librería OAuth) va solo al log, nunca al navegador.
+        Log::notice('authorize rechazado: '.$detalle, ['ip' => request()->ip()]);
+
         return response()->json([
             'codigo' => 'solicitud_invalida',
             'message' => 'El enlace de ingreso no es válido o está incompleto. Vuelve al sistema e inténtalo de nuevo.',
-            'detalle' => $detalle,
         ], 400);
     }
 }

@@ -19,7 +19,7 @@ class Llaves
             return self::$jwk;
         }
 
-        $pem = config('passport.public_key') ?: @file_get_contents(Passport::keyPath('oauth-public.key'));
+        $pem = self::publicaPem();
         $detalles = $pem ? openssl_pkey_get_details(openssl_pkey_get_public($pem)) : false;
         if (! $detalles || ($detalles['type'] ?? null) !== OPENSSL_KEYTYPE_RSA) {
             throw new RuntimeException('No se pudo leer la llave pública RSA de Passport.');
@@ -30,6 +30,12 @@ class Llaves
         $kid = self::base64url(hash('sha256', json_encode(['e' => $e, 'kty' => 'RSA', 'n' => $n]), true));
 
         return self::$jwk = ['kty' => 'RSA', 'use' => 'sig', 'alg' => 'RS256', 'kid' => $kid, 'n' => $n, 'e' => $e];
+    }
+
+    /** Llave pública RSA en formato PEM (la misma que publica el JWKS). */
+    public static function publicaPem(): string
+    {
+        return (string) (config('passport.public_key') ?: @file_get_contents(Passport::keyPath('oauth-public.key')));
     }
 
     public static function kid(): string

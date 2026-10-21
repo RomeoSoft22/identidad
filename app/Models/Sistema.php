@@ -8,9 +8,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Sistema extends Model
 {
+    public const CREATED_AT = 'creado_en';
+
+    public const UPDATED_AT = 'actualizado_en';
+
     protected $table = 'sistemas';
 
-    protected $fillable = ['codigo', 'nombre', 'url_base', 'oauth_client_id', 'activo'];
+    protected $fillable = ['codigo', 'nombre', 'descripcion', 'url_base', 'oauth_client_id', 'activo'];
 
     protected function casts(): array
     {

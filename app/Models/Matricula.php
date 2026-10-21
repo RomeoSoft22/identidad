@@ -9,20 +9,27 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Matricula extends Model
 {
     public const ACTIVA = 'activa';
+
     public const SUSPENDIDA = 'suspendida';
+
+    public const RETIRADA = 'retirada';
+
+    public const CREATED_AT = 'creado_en';
+
+    public const UPDATED_AT = 'actualizado_en';
 
     protected $table = 'matriculas';
 
-    protected $fillable = ['user_id', 'sistema_id', 'rol_id', 'estado', 'vigente_hasta', 'creado_por'];
+    protected $fillable = ['usuario_id', 'sistema_id', 'rol_id', 'estado', 'vigente_desde', 'vigente_hasta', 'creado_por'];
 
     protected function casts(): array
     {
-        return ['vigente_hasta' => 'datetime'];
+        return ['vigente_desde' => 'datetime', 'vigente_hasta' => 'datetime', 'ultimo_acceso_en' => 'datetime'];
     }
 
-    public function user(): BelongsTo
+    public function usuario(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(Usuario::class);
     }
 
     public function sistema(): BelongsTo
@@ -38,6 +45,7 @@ class Matricula extends Model
     public function scopeVigentes(Builder $query): void
     {
         $query->where('matriculas.estado', self::ACTIVA)
+            ->where(fn (Builder $q) => $q->whereNull('matriculas.vigente_desde')->orWhere('matriculas.vigente_desde', '<=', now()))
             ->where(fn (Builder $q) => $q->whereNull('matriculas.vigente_hasta')->orWhere('matriculas.vigente_hasta', '>', now()));
     }
 }

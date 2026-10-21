@@ -4,13 +4,15 @@ namespace App\OAuth;
 
 use App\Models\EventoAuditoria;
 use App\Models\Sistema;
-use App\Models\User;
+use App\Models\Usuario;
 use App\Support\Auditoria;
 use App\Support\Llaves;
+use App\Support\SesionesSso;
 use DateTimeImmutable;
 use Lcobucci\JWT\Token;
 use League\OAuth2\Server\Entities\AccessTokenEntityInterface;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
+use League\OAuth2\Server\Entities\ScopeEntityInterface;
 use League\OAuth2\Server\Entities\Traits\AccessTokenTrait;
 use League\OAuth2\Server\Entities\Traits\EntityTrait;
 use League\OAuth2\Server\Entities\Traits\TokenEntityTrait;
@@ -33,7 +35,7 @@ class AccessToken implements AccessTokenEntityInterface
     /**
      * Misma firma que Laravel\Passport\Bridge\AccessToken, que es como Passport lo construye.
      *
-     * @param  \League\OAuth2\Server\Entities\ScopeEntityInterface[]  $scopes
+     * @param  ScopeEntityInterface[]  $scopes
      */
     public function __construct(?string $userIdentifier, array $scopes, ClientEntityInterface $client)
     {
@@ -53,9 +55,9 @@ class AccessToken implements AccessTokenEntityInterface
         $this->initJwtConfiguration();
 
         $sistema = Sistema::porCliente($this->getClient()->getIdentifier());
-        $user = $this->getUserIdentifier() ? User::find($this->getUserIdentifier()) : null;
+        $user = $this->getUserIdentifier() ? Usuario::find($this->getUserIdentifier()) : null;
 
-        if (! $sistema?->activo || ! $user || $user->estado !== User::ACTIVO) {
+        if (! $sistema?->activo || ! $user || $user->estado !== Usuario::ACTIVO) {
             throw OAuthServerException::accessDenied('La cuenta o el sistema no están habilitados.');
         }
 
@@ -65,9 +67,14 @@ class AccessToken implements AccessTokenEntityInterface
             throw OAuthServerException::accessDenied('El usuario no tiene matrícula vigente en este sistema.');
         }
 
-        $ahora = new DateTimeImmutable();
+        $ahora = new DateTimeImmutable;
 
-        Auditoria::registrar(EventoAuditoria::TOKEN_EMITIDO, $user, $sistema, ['jti' => $this->getIdentifier()]);
+        // Llamada servidor a servidor del sistema cliente: la IP registrada es la del servidor del sistema.
+        $renovacion = request()->input('grant_type') === 'refresh_token';
+        Auditoria::registrar($renovacion ? EventoAuditoria::TOKEN_RENOVADO : EventoAuditoria::TOKEN_EMITIDO, $user, $sistema, [
+            'jti' => $this->getIdentifier(), 'origen' => 'servidor_sistema',
+        ]);
+        SesionesSso::marcarVisita($user, $sistema);
 
         return $this->jwtConfiguration->builder()
             ->withHeader('kid', Llaves::kid())
@@ -78,8 +85,8 @@ class AccessToken implements AccessTokenEntityInterface
             ->canOnlyBeUsedAfter($ahora)
             ->expiresAt($this->getExpiryDateTime())
             ->relatedTo($user->uuid)
-            ->withClaim('name', $user->name)
-            ->withClaim('email', $user->email)
+            ->withClaim('name', $user->nombreCompleto())
+            ->withClaim('email', $user->correo)
             ->withClaim('roles', $roles)
             ->withClaim('scopes', $this->getScopes())
             ->getToken($this->jwtConfiguration->signer(), $this->jwtConfiguration->signingKey());

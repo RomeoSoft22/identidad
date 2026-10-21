@@ -1,19 +1,20 @@
 # Identidad Juarez Campos
 
-Proveedor de identidad central (`identidad.juarezcampos.net`). Autentica a los usuarios una sola vez (SSO), verifica que estén matriculados en el sistema que piden y emite un JWT RS256 que cada sistema valida con la llave pública.
+API del proveedor de identidad central (`identidad.juarezcampos.net`). Autentica a los usuarios una sola vez (SSO), verifica que estén matriculados en el sistema que piden y emite un JWT RS256 que cada sistema valida con la llave pública. Incluye la API de administración que usa el panel (`panel.juarezcampos.net`).
 
-Laravel 13 + Laravel Passport 13 · OAuth 2.0 Authorization Code + PKCE.
+Laravel 13 + Laravel Passport 13 · OAuth 2.0 Authorization Code + PKCE. Las pantallas viven en `identidad-web` (login) y `panel-web` (administración).
+
+Base de datos: MySQL `juarezc_panel`, con tablas en español (ver *Modelo de datos*).
 
 ## Endpoints
 
 | Ruta | Uso |
 |---|---|
-| `GET /oauth/authorize` | Inicio del flujo. Muestra login si no hay sesión; si el usuario no está matriculado responde 403. |
-| `POST /oauth/token` | Servidor a servidor: canjea el código o el refresh token por el access token. |
-| `GET /.well-known/jwks.json` | Llave pública (JWK) para verificar la firma. |
-| `GET /.well-known/openid-configuration` | Documento de descubrimiento. |
-| `GET /logout?post_logout_redirect_uri=…` | Cierra la sesión SSO y revoca los tokens del usuario. |
-| `GET/POST /login` | Formulario de ingreso. |
+| `GET /api/sesion` · `POST /api/login` · `POST /api/login/verificar` · `POST /api/logout` | Los usa identidad-web (cookie de sesión SSO + CSRF). `verificar` recibe el código de 6 dígitos enviado al correo. |
+| `GET /api/authorize` | Equivalente JSON de `/oauth/authorize`: devuelve a dónde volver con el código, o pide login, o responde "sin acceso". |
+| `POST /api/oauth/token` | Canje del código o del refresh token. Clientes con secreto (ISTQB, FIRMA) o públicos con PKCE (PANEL). |
+| `GET /api/jwks.json` · `GET /api/.well-known/openid-configuration` | Llave pública (JWK) y documento de descubrimiento. |
+| `/api/admin/*` | API del panel: resumen, sistemas, roles, usuarios, matrículas y auditoría. Exige el JWT del sistema `PANEL` con rol `ADMIN`. |
 
 ## Contenido del JWT
 
@@ -26,12 +27,23 @@ Cabecera: `alg: RS256` y `kid` (huella RFC 7638 de la llave; cambia sola al rota
 
 ## Reglas de seguridad
 
-- La cuenta se bloquea al 10.º fallo de contraseña consecutivo y se revocan sus tokens. Solo un administrador la desbloquea.
-- Límite de 20 intentos de login por IP y por minuto.
-- El mensaje de error no revela si el correo existe.
-- Cada emisión de token (canje y renovación) vuelve a comprobar que la cuenta esté activa y la matrícula vigente.
-- Los refresh tokens rotan en cada uso.
-- Todo queda en `eventos_auditoria`: `login_exitoso`, `login_fallido`, `cuenta_bloqueada`, `ingreso_cuenta_bloqueada`, `cuenta_desbloqueada`, `acceso_denegado`, `limite_ip`, `token_emitido`, `logout`.
+- Tras 10 fallos de contraseña consecutivos la cuenta se bloquea y se revocan sus tokens y sesiones. **El atacante no se entera**: recibe siempre el mismo mensaje genérico.
+- Si una cuenta bloqueada ingresa la contraseña correcta, se envía un **código de 6 dígitos al correo** (vence en 10 minutos, 5 intentos, máximo 5 envíos por hora y solo se guarda su hash). Con el código la cuenta se desbloquea y se completa el ingreso. Un administrador también puede desbloquearla desde el panel.
+- Límite de 20 intentos de login por IP y por minuto. El mensaje de error no revela si el correo existe.
+- Cada emisión de token (canje y renovación) vuelve a comprobar cuenta activa y matrícula vigente. Los refresh tokens rotan en cada uso.
+- **Errores**: ninguna respuesta incluye SQL, tablas, clases, motor de base de datos ni framework, aun con `APP_DEBUG=true` (`app/Exceptions/ErroresSeguros.php`). El usuario ve un mensaje claro y una referencia (`E-XXXXXXXX`); el detalle queda en `storage/logs` con esa referencia.
+- CORS solo para los orígenes de `IDENTIDAD_CORS_ORIGENES` (el panel) y solo en `/api/admin/*`, `/api/oauth/token` y JWKS.
+
+## Auditoría
+
+Cada ingreso guarda IP, IP reenviada (`X-Forwarded-For`), navegador y versión, sistema operativo y versión, tipo de equipo, zona horaria e idioma del navegador:
+
+- `sesiones_sso`: cada ingreso con contraseña, su dispositivo, última actividad y motivo de cierre (logout, expirada, revocada, bloqueo).
+- `dispositivos`: equipos y navegadores conocidos por usuario (avisa con `dispositivo_nuevo`).
+- `accesos`: cada entrada a un sistema (`login` o `sso`); `matriculas.ultimo_acceso_en` guarda la última visita a cada sistema.
+- `eventos_auditoria`: todo evento con su resultado y, en acciones del panel, el administrador (`actor_id`).
+
+Se conserva 12 meses (`IDENTIDAD_RETENCION_AUDITORIA_MESES`); `identidad:depurar-auditoria` corre a diario.
 
 ## Puesta en marcha local
 
@@ -44,17 +56,22 @@ php artisan migrate
 php artisan serve --port=8001
 ```
 
-## Administración por consola (hasta que exista el panel)
+Requiere las extensiones PHP `sodium`, `openssl` y `pdo_mysql`. En local el correo va al log (`MAIL_MAILER=log`): el código de 6 dígitos aparece en `storage/logs/laravel.log`.
+
+## Administración por consola
+
+Lo normal es usar el panel. Para el primer administrador o una emergencia:
 
 ```bash
-php artisan identidad:usuario admin@juarezcampos.net "Nombre Apellido"
-php artisan identidad:sistema ISTQB "Simulador ISTQB" --url=https://istqb.juarezcampos.net --redirect=https://istqb.juarezcampos.net/callback
-php artisan identidad:rol ISTQB ADMIN Administrador
-php artisan identidad:matricular admin@juarezcampos.net ISTQB ADMIN
+php artisan identidad:usuario admin@juarezcampos.net "Nombres" "Apellidos"
+php artisan identidad:sistema PANEL "Panel de administración" --publico --url=https://panel.juarezcampos.net --redirect=https://panel.juarezcampos.net/callback
+php artisan identidad:rol PANEL ADMIN Administrador
+php artisan identidad:matricular admin@juarezcampos.net PANEL ADMIN
+php artisan identidad:sistema FIRMA "Firma digital" --url=https://firma.juarezcampos.net --redirect=https://firma.juarezcampos.net/callback
 php artisan identidad:desbloquear admin@juarezcampos.net
 ```
 
-`identidad:sistema` muestra el `client_secret` una sola vez: guárdalo en el `.env` del sistema cliente.
+`identidad:sistema` muestra el `client_secret` una sola vez (salvo `--publico`, que no tiene secreto): guárdalo en el `.env` del sistema cliente.
 
 ## Pruebas
 
@@ -66,7 +83,8 @@ php artisan test
 
 ## Producción
 
-- `IDENTIDAD_ISSUER=https://identidad.juarezcampos.net` y `APP_URL` igual.
+- `APP_DEBUG=false`, `IDENTIDAD_ISSUER=https://identidad.juarezcampos.net`, `IDENTIDAD_API_URL=https://identidad.juarezcampos.net/api`, `IDENTIDAD_CORS_ORIGENES=https://panel.juarezcampos.net`.
+- **Correo SMTP** (`MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`) para enviar el código de desbloqueo. Una cuenta de correo de cPanel sirve.
 - Las llaves `storage/oauth-private.key` y `storage/oauth-public.key` no van al repositorio. Genéralas en el servidor con `php artisan passport:keys` o cárgalas en `PASSPORT_PRIVATE_KEY` / `PASSPORT_PUBLIC_KEY`.
-- Programar `php artisan schedule:run` cada minuto (purga diaria de tokens vencidos).
+- Programar `php artisan schedule:run` cada minuto (purga de tokens y de auditoría).
 - `SESSION_SECURE_COOKIE=true` con HTTPS.
