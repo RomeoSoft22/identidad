@@ -1,0 +1,3 @@
+# Protección adicional: si por error la carpeta identidad-api quedara dentro de public_html,
+# Apache no servirá ninguno de sus archivos (.env, llaves RSA, logs, código).
+Require all denied

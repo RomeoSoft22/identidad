@@ -83,6 +83,15 @@ php artisan test
 
 ## Producción
 
+Paquetes para cPanel de todo el ecosistema (identidad, panel, ISTQB y firma), con su `.sql` y guía paso a paso:
+
+```bash
+ADMIN_CORREO=admin@juarezcampos.net ADMIN_NOMBRES="Nombres" ADMIN_APELLIDOS="Apellidos" \
+  bash identidad/despliegue/empaquetar-cpanel.sh
+```
+
+Genera `paquetes/cpanel-<fecha>/` junto a los repos (nunca dentro de uno: lleva secretos). Ver `despliegue/LEEME-cpanel.md`.
+
 - `APP_DEBUG=false`, `IDENTIDAD_ISSUER=https://identidad.juarezcampos.net`, `IDENTIDAD_API_URL=https://identidad.juarezcampos.net/api`, `IDENTIDAD_CORS_ORIGENES=https://panel.juarezcampos.net`.
 - **Correo SMTP** (`MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`) para enviar el código de desbloqueo. Una cuenta de correo de cPanel sirve.
 - Las llaves `storage/oauth-private.key` y `storage/oauth-public.key` no van al repositorio. Genéralas en el servidor con `php artisan passport:keys` o cárgalas en `PASSPORT_PRIVATE_KEY` / `PASSPORT_PUBLIC_KEY`.

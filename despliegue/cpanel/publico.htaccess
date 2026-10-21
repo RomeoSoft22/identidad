@@ -1,0 +1,54 @@
+# identidad.juarezcampos.net — raíz pública: pantallas de identidad-web (Angular) + API de identidad en /api.
+Options -Indexes -MultiViews
+DirectoryIndex index.html
+AddType application/javascript .mjs
+AddDefaultCharset utf-8
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Siempre HTTPS
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Encabezados que Laravel necesita (JWT del panel y token CSRF de identidad-web)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    RewriteCond %{HTTP:X-XSRF-Token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # /api/* → Laravel (fuera de la web, en ../identidad-api)
+    RewriteRule ^api(/.*)?$ laravel.php [L,QSA]
+
+    # Archivos y carpetas existentes (js, css…)
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Cualquier otra ruta es de Angular (/authorize, /login, /logout)
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
+    Header always setifempty Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+    <FilesMatch "^index\.html$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+    <FilesMatch "-[A-Za-z0-9_]{8}\.(js|css)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>
+
+# Nunca servir archivos ocultos (.env, .git…), llaves ni respaldos
+<FilesMatch "(^\.|\.(bak|old|sql|sqlite|log|env|key|pem)$)">
+    Require all denied
+</FilesMatch>
