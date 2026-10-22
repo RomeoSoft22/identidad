@@ -122,6 +122,7 @@ Las pantallas nunca muestran detalles técnicos: muestran una **referencia** com
 | Síntoma | Causa habitual | Solución |
 | --- | --- | --- |
 | «No pudimos iniciar el ingreso» con referencia al abrir el panel | Llaves de Passport con permisos `644` (paquetes anteriores) | Ver sección 6 |
+| «No tienes acceso a Panel de administración» con tu usuario ya creado | Fecha `vigente_desde` en el futuro por la zona horaria (paquetes anteriores) | phpMyAdmin → `juarezc_panel` → SQL: `UPDATE matriculas SET vigente_desde = NULL;` |
 | El log dice `Access denied for user` | `DB_USERNAME`/`DB_PASSWORD` mal o el usuario no está agregado a la base | Revisa 1.2 y 1.5 |
 | El log dice `Table ... doesn't exist` | No se importó `juarezc_panel.sql` o se importó en otra base | Revisa 1.2 |
 | El log dice `Permission denied` en `storage` | PHP no puede escribir | Permisos `755` en `identidad-api/storage` y `bootstrap/cache` |
