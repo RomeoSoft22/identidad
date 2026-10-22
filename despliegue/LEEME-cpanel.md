@@ -109,6 +109,7 @@ Deja también `DB_TIMEZONE=+00:00` tal cual. Hace que la base trabaje en UTC, ig
 - [ ] Sube y extrae `4-firma-firma.juarezcampos.net.zip` en `/home/juarezc/` (sobrescribir). No trae `.env`, base SQLite ni `storage/`: tus PDFs y registros se conservan.
 - [ ] En `/home/juarezc/firma-api/.env` **borra** las líneas `ADMIN_CLAVE`, `ADMIN_SESION_MINUTOS`, `ADMIN_INTENTOS`, `ADMIN_BLOQUEO_MINUTOS`, `ADMIN_INTENTOS_GLOBALES` y pega al final el contenido de `env/firma-api.env-agregar`.
 - [ ] Vacía `firma-api/bootstrap/cache/` (menos `.gitignore`).
+- [ ] `https://firma.juarezcampos.net/api/acceso/config` responde un JSON con `authorize_endpoint` (si dice «El recurso solicitado no existe.», el código de `firma-api/` no se reemplazó).
 - [ ] `https://firma.juarezcampos.net/historial` te lleva a identidad. Firmar y Verificar siguen sin pedir ingreso.
 
 ---
@@ -125,6 +126,7 @@ Las pantallas nunca muestran detalles técnicos: muestran una **referencia** com
 | --- | --- | --- |
 | «No pudimos iniciar el ingreso» con referencia al abrir el panel | Llaves de Passport con permisos `644` (paquetes anteriores) | Ver sección 6 |
 | «No tienes acceso a Panel de administración» con tu usuario ya creado | Fecha `vigente_desde` en el futuro por la zona horaria (paquetes anteriores) | Ver sección 7 |
+| Firma: «El recurso solicitado no existe.» al pulsar «Ingresar con mi cuenta» | `firma-api/` sigue con el código anterior (el zip 4 no lo sobrescribió o se extrajo en otra carpeta) | Comprueba que exista `firma-api/app/Support/Identidad.php`; extrae el zip 4 en `/home/juarezc/` sobrescribiendo y vacía `firma-api/bootstrap/cache/`. `https://firma.juarezcampos.net/api/acceso/config` debe responder un JSON con `authorize_endpoint` |
 | El log dice `Access denied for user` | `DB_USERNAME`/`DB_PASSWORD` mal o el usuario no está agregado a la base | Revisa 1.2 y 1.5 |
 | El log dice `Table ... doesn't exist` | No se importó `juarezc_panel.sql` o se importó en otra base | Revisa 1.2 |
 | El log dice `Permission denied` en `storage` | PHP no puede escribir | Permisos `755` en `identidad-api/storage` y `bootstrap/cache` |
