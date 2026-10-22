@@ -58,6 +58,8 @@ Edita `/home/juarezc/identidad-api/.env` y cambia **solo** estas líneas:
 
 No toques `APP_KEY`, `PASSPORT_PRIVATE_KEY` ni `PASSPORT_PUBLIC_KEY`: son las llaves que firman los tokens.
 
+Deja también `DB_TIMEZONE=+00:00` tal cual. Hace que la base trabaje en UTC, igual que la aplicación. Si falta o cambia, las fechas de acceso se leen corridas y aparece «No tienes acceso» aunque estés matriculado. Si la línea no estuviera en el `.env`, Laravel usa `+00:00` igual (es el valor por defecto en `config/database.php`).
+
 ### 1.6 Tarea programada
 - [ ] **Cron Jobs** → «Una vez por minuto» → comando:
   `cd /home/juarezc/identidad-api && php artisan schedule:run >> /dev/null 2>&1`
@@ -122,7 +124,7 @@ Las pantallas nunca muestran detalles técnicos: muestran una **referencia** com
 | Síntoma | Causa habitual | Solución |
 | --- | --- | --- |
 | «No pudimos iniciar el ingreso» con referencia al abrir el panel | Llaves de Passport con permisos `644` (paquetes anteriores) | Ver sección 6 |
-| «No tienes acceso a Panel de administración» con tu usuario ya creado | Fecha `vigente_desde` en el futuro por la zona horaria (paquetes anteriores) | phpMyAdmin → `juarezc_panel` → SQL: `UPDATE matriculas SET vigente_desde = NULL;` |
+| «No tienes acceso a Panel de administración» con tu usuario ya creado | Fecha `vigente_desde` en el futuro por la zona horaria (paquetes anteriores) | Ver sección 7 |
 | El log dice `Access denied for user` | `DB_USERNAME`/`DB_PASSWORD` mal o el usuario no está agregado a la base | Revisa 1.2 y 1.5 |
 | El log dice `Table ... doesn't exist` | No se importó `juarezc_panel.sql` o se importó en otra base | Revisa 1.2 |
 | El log dice `Permission denied` en `storage` | PHP no puede escribir | Permisos `755` en `identidad-api/storage` y `bootstrap/cache` |
@@ -144,3 +146,39 @@ Corrígelo así, **sin tocar la base**:
   - **Definitivo**: del `.env` del zip nuevo copia el bloque `PASSPORT_PRIVATE_KEY="…"` y `PASSPORT_PUBLIC_KEY="…"` (varias líneas cada uno, con sus comillas) al final de tu `identidad-api/.env`, y borra `storage/oauth-private.key` y `storage/oauth-public.key`. Son las mismas llaves de esos archivos (vienen del mismo paquete), solo cambia dónde se guardan.
 - [ ] **Estilos**: borra el contenido de `/home/juarezc/identidad.juarezcampos.net/` **excepto** `laravel.php`, y sube ahí el contenido de la carpeta `identidad.juarezcampos.net/` del zip nuevo. Haz lo mismo con `panel.juarezcampos.net/`, conservando tu `config.json`.
 - [ ] Vuelve a probar `https://panel.juarezcampos.net`.
+
+---
+
+## 7. Si ya desplegaste y ves «No tienes acceso a …» estando matriculado
+
+Los paquetes anteriores al 22/10/2026 tenían dos detalles de zona horaria:
+- el `.sql` guardó las fechas de inicio de acceso (`vigente_desde`) unas horas en el futuro;
+- la conexión a la base no fijaba UTC, así que MariaDB devolvía las fechas en la hora del servidor.
+
+Haz los tres pasos (no se pierde ningún dato):
+
+- [ ] **Datos**: phpMyAdmin → base `juarezc_panel` → pestaña **SQL** → ejecuta:
+  ```sql
+  UPDATE matriculas SET vigente_desde = NULL;
+  ```
+  `NULL` significa «vigente desde siempre»; no cambia sistemas, roles ni permisos.
+- [ ] **`.env`**: en `/home/juarezc/identidad-api/.env`, justo debajo de `DB_PASSWORD=…`, agrega:
+  ```
+  # Zona horaria de la sesión de base de datos. Debe quedar en +00:00 (UTC), igual que la aplicación.
+  DB_TIMEZONE=+00:00
+  ```
+- [ ] **Código**: reemplaza `/home/juarezc/identidad-api/config/database.php` por el del zip nuevo
+  (`identidad-api/config/database.php`). Si prefieres editarlo a mano, en los bloques `'mysql' => [` y
+  `'mariadb' => [`, debajo de `'strict' => true,` agrega:
+  ```php
+  'timezone' => env('DB_TIMEZONE', '+00:00'),
+  ```
+  `env('DB_TIMEZONE', '+00:00')` lee `DB_TIMEZONE` del `.env`; si no existe, usa `+00:00`.
+- [ ] Vacía `identidad-api/bootstrap/cache/` (borra todo menos `.gitignore`) para que Laravel tome la nueva configuración.
+- [ ] Recarga `https://panel.juarezcampos.net`.
+
+Comprobación en phpMyAdmin (`juarezc_panel` → SQL): debe mostrar tus 3 accesos `activa` y `vigente_desde` vacío.
+```sql
+SELECT s.codigo AS sistema, r.codigo AS rol, m.estado, m.vigente_desde, m.vigente_hasta
+FROM matriculas m JOIN sistemas s ON s.id = m.sistema_id JOIN roles r ON r.id = m.rol_id;
+```
