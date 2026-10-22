@@ -1,87 +1,145 @@
-# Despliegue en cPanel — identidad, panel, ISTQB y firma
+# Guía de despliegue en cPanel — identidad, panel, ISTQB y firma
 
-Paquetes generados con `identidad/despliegue/empaquetar-cpanel.sh`. Usuario de cPanel: `juarezc`.
-Todo se sube a la carpeta personal `/home/juarezc/` (no dentro de `public_html`, salvo ISTQB que ya vive ahí).
+Usuario de cPanel: `juarezc` · Carpeta personal: `/home/juarezc/`
 
-| Archivo | Qué contiene | Dónde va |
-| --- | --- | --- |
-| `1-identidad-identidad.juarezcampos.net.zip` | `identidad.juarezcampos.net/` (pantalla de login + `laravel.php`) y `identidad-api/` (Laravel con `vendor/`, `.env`, llaves RSA) | `/home/juarezc/` |
-| `2-panel-panel.juarezcampos.net.zip` | `panel.juarezcampos.net/` (panel + `config.json`) | `/home/juarezc/` |
-| `3-istqb-juarezcampos.net.zip` | `public_html/istqb/` (front) e `istqb-api-app/` (código, **sin** `.env` ni `storage/`) | `/home/juarezc/` |
-| `4-firma-firma.juarezcampos.net.zip` | `firma.juarezcampos.net/` y `firma-api/` (código, **sin** `.env`, base ni `storage/`) | `/home/juarezc/` |
-| `sql/juarezc_panel.sql` | Tablas de identidad + sistemas PANEL, ISTQB, FIRMA + roles + tu usuario administrador | phpMyAdmin → base `juarezc_panel` |
-| `sql/istqb-agregar-identidad.sql` | Columna `identidad_sub` en `users` | phpMyAdmin → base `juarezc_istqb_exam` |
-| `env/*.env-agregar` | Líneas `IDENTIDAD_*` (con el secreto) para los `.env` que ya están en el servidor | se pegan en cada `.env` |
-| `CREDENCIALES.txt` | Tu contraseña inicial y los secretos | **solo para ti**: no lo subas a ningún lado |
+Sigue los pasos **en orden** y marca cada casilla. Identidad va primero porque los demás sistemas inician sesión con ella.
 
-> `identidad-api/.env` dentro del zip 1 trae `APP_KEY` y las llaves que firman los tokens:
-> trata ese `.zip` como confidencial y bórralo del servidor después de extraerlo.
+---
 
-## Orden recomendado
+## 0. Antes de empezar
 
-Identidad primero (los demás dependen de ella), luego el panel, y al final ISTQB y firma.
+- [ ] Ten a mano la carpeta del paquete (`paquetes/cpanel-<fecha>/`) con: los 4 `.zip`, `sql/`, `env/` y `CREDENCIALES.txt`.
+- [ ] **Los `.sql`, los `env/*.env-agregar` y `CREDENCIALES.txt` de una misma carpeta van juntos** (los secretos de uno coinciden con los del otro). No mezcles archivos de paquetes distintos.
+- [ ] En el Administrador de archivos de cPanel activa **Configuración → Mostrar archivos ocultos** (para ver `.env` y `.htaccess`).
+- [ ] Respaldos (solo si ya tienes estos sistemas funcionando):
+  - [ ] phpMyAdmin → `juarezc_istqb_exam` → **Exportar**.
+  - [ ] Descarga `/home/juarezc/istqb-api-app/.env`.
+  - [ ] Descarga `/home/juarezc/firma-api/.env`, `firma-api/database/database.sqlite` y `firma-api/storage/app/private/`.
 
-### 1. Identidad — https://identidad.juarezcampos.net
+---
 
-1. **Dominios → Crear un nuevo dominio**: `identidad.juarezcampos.net`, raíz `/home/juarezc/identidad.juarezcampos.net`
-   (desmarca «Compartir la raíz con el dominio principal»).
-2. **MultiPHP Manager**: PHP 8.3. **Seleccionar versión de PHP → Extensiones**: `pdo_mysql`, `mbstring`, `openssl`,
-   `sodium`, `curl`, `intl`, `fileinfo`, `tokenizer`. Opción `expose_php = Off`.
-3. **Bases de datos MySQL**: crea la base `juarezc_panel` y un usuario (por ejemplo `juarezc_panel`) con todos los privilegios sobre ella.
-4. **phpMyAdmin** → base `juarezc_panel` → **Importar** → `sql/juarezc_panel.sql`.
-5. **Cuentas de correo**: crea `no-responder@juarezcampos.net` (envía el código de 6 dígitos de desbloqueo).
-6. **Administrador de archivos** → `/home/juarezc/` → Cargar el zip 1 → Extraer.
-7. Edita `/home/juarezc/identidad-api/.env` (activa «Mostrar archivos ocultos») y completa:
-   `DB_USERNAME`, `DB_PASSWORD` y `MAIL_PASSWORD`. Si tu servidor de correo no es `mail.juarezcampos.net:465`, ajusta `MAIL_HOST`/`MAIL_PORT`.
-8. **SSL/TLS Status → Run AutoSSL** para el subdominio.
-9. **Cron Jobs** (cada minuto): `cd /home/juarezc/identidad-api && php artisan schedule:run >> /dev/null 2>&1`
-   (purga tokens vencidos y la auditoría de más de 12 meses).
+## 1. Identidad — `https://identidad.juarezcampos.net`
 
-Comprobar:
+### 1.1 Subdominio y PHP (una sola vez)
+- [ ] **Dominios → Crear un nuevo dominio**: `identidad.juarezcampos.net`, raíz `/home/juarezc/identidad.juarezcampos.net`. Desmarca «Compartir la raíz con el dominio principal».
+- [ ] **MultiPHP Manager**: `identidad.juarezcampos.net` → **PHP 8.3**.
+- [ ] **Seleccionar versión de PHP → Extensiones**: marca `pdo_mysql`, `mbstring`, `openssl`, `sodium`, `curl`, `intl`, `fileinfo`. **Opciones**: `expose_php = Off`.
+- [ ] **SSL/TLS Status → Run AutoSSL** (certificado HTTPS).
 
-| Prueba | Esperado |
+### 1.2 Base de datos `juarezc_panel`
+- [ ] **Bases de datos MySQL**: crea la base `juarezc_panel`.
+- [ ] Crea un usuario (por ejemplo `juarezc_panel`) con una contraseña larga y **agrégalo a la base con TODOS LOS PRIVILEGIOS**.
+- [ ] **phpMyAdmin** → selecciona `juarezc_panel` (a la izquierda) → **Importar** → `sql/juarezc_panel.sql` → Continuar.
+- [ ] Debe mostrar unas 21 tablas (`usuarios`, `sistemas`, `roles`, `matriculas`, `oauth_clients`…).
+
+> **¿Hay que borrarla para volver a empezar?** No es necesario si la importación terminó bien.
+> Si quieres empezar de cero: phpMyAdmin → `juarezc_panel` → marca **todas** las tablas → «Eliminar» → vuelve a importar **el mismo** `juarezc_panel.sql`.
+> Si generas un paquete nuevo, importa el `.sql` de ese paquete nuevo (sus secretos cambian).
+
+### 1.3 Correo para el código de desbloqueo
+- [ ] **Cuentas de correo**: crea `no-responder@juarezcampos.net` (anota su contraseña).
+- [ ] En **Conectar dispositivos** de esa cuenta revisa el servidor SMTP y el puerto SSL (normalmente `mail.juarezcampos.net`, puerto `465`).
+
+### 1.4 Subir los archivos
+- [ ] **Administrador de archivos** → entra a `/home/juarezc/` (no a `public_html`).
+- [ ] **Cargar** `1-identidad-identidad.juarezcampos.net.zip` → clic derecho → **Extraer** en `/home/juarezc/`.
+- [ ] Quedan dos carpetas: `identidad.juarezcampos.net/` (pública) e `identidad-api/` (privada).
+- [ ] Borra el `.zip` del servidor.
+
+### 1.5 Completar `identidad-api/.env`
+Edita `/home/juarezc/identidad-api/.env` y cambia **solo** estas líneas:
+
+| Línea | Valor |
 | --- | --- |
-| `https://identidad.juarezcampos.net/login` | Pantalla de ingreso |
-| `https://identidad.juarezcampos.net/api/jwks.json` | JSON con la llave pública |
-| `https://identidad.juarezcampos.net/api/xyz` | `{"codigo":"error_solicitud","message":"No encontramos lo que buscas."}` sin datos del servidor |
-| `https://identidad.juarezcampos.net/.env` | 403 |
+| `DB_USERNAME=` | el usuario MySQL del paso 1.2 (ej. `juarezc_panel`) |
+| `DB_PASSWORD=` | su contraseña |
+| `MAIL_PASSWORD=` | la contraseña de `no-responder@juarezcampos.net` |
+| `MAIL_HOST=` / `MAIL_PORT=` | solo si en 1.3 viste otros valores |
 
-### 2. Panel — https://panel.juarezcampos.net
+No toques `APP_KEY`, `PASSPORT_PRIVATE_KEY` ni `PASSPORT_PUBLIC_KEY`: son las llaves que firman los tokens.
 
-1. Crea el dominio `panel.juarezcampos.net` con raíz `/home/juarezc/panel.juarezcampos.net` y corre AutoSSL.
-2. Sube y extrae el zip 2 en `/home/juarezc/`. `config.json` ya trae el `client_id` de PANEL.
-3. Abre el panel e ingresa con tu correo y la contraseña de `CREDENCIALES.txt`.
-   **Cámbiala de inmediato**: Usuarios → tu usuario → Cambiar contraseña.
+### 1.6 Tarea programada
+- [ ] **Cron Jobs** → «Una vez por minuto» → comando:
+  `cd /home/juarezc/identidad-api && php artisan schedule:run >> /dev/null 2>&1`
 
-### 3. ISTQB — https://juarezcampos.net/istqb
+### 1.7 Comprobar
+| Abre | Debes ver |
+| --- | --- |
+| `https://identidad.juarezcampos.net/login` | Pantalla de ingreso **con estilos** (botón azul) |
+| `https://identidad.juarezcampos.net/api/jwks.json` | Un JSON con `"keys"` |
+| `https://identidad.juarezcampos.net/api/sesion` | `{"codigo":"sin_sesion",...}` (significa que la base y la sesión funcionan) |
+| `https://identidad.juarezcampos.net/.env` | Error 403 |
 
-1. **Respaldo** (antes de tocar nada): descarga `/home/juarezc/istqb-api-app/.env` y exporta `juarezc_istqb_exam` desde phpMyAdmin.
-2. **phpMyAdmin** → `juarezc_istqb_exam` → Importar `sql/istqb-agregar-identidad.sql` (una sola vez).
-   Con Terminal es lo mismo que `cd ~/istqb-api-app && php artisan migrate --force`.
-3. Sube el zip 3 a `/home/juarezc/` y extrae: reemplaza el contenido de `public_html/istqb/` y el código de
-   `istqb-api-app/`. **No** toca `.env` ni `storage/` (imágenes de preguntas y logs).
-4. Pega al final de `/home/juarezc/istqb-api-app/.env` el contenido de `env/istqb-api-app.env-agregar`.
-5. Con Terminal: `cd ~/istqb-api-app && php artisan optimize:clear`. Sin Terminal: borra los archivos de
-   `istqb-api-app/bootstrap/cache/` excepto `.gitignore`.
-6. Prueba `https://juarezcampos.net/istqb/admin`: debe llevarte a identidad y volver al panel de ISTQB.
-   El simulacro público sigue sin pedir ingreso.
+---
 
-### 4. Firma — https://firma.juarezcampos.net
+## 2. Panel — `https://panel.juarezcampos.net`
 
-1. **Respaldo**: descarga `firma-api/.env`, `firma-api/database/database.sqlite` y `firma-api/storage/app/private/`.
-2. Sube el zip 4 a `/home/juarezc/` y extrae: reemplaza el front y el código de `firma-api/`.
-   **No** toca `.env`, la base SQLite ni `storage/` (PDFs y firmas). El instalador del agente va incluido en `descargas/`.
-3. En `/home/juarezc/firma-api/.env` borra las líneas `ADMIN_CLAVE`, `ADMIN_SESION_MINUTOS`, `ADMIN_INTENTOS`,
-   `ADMIN_BLOQUEO_MINUTOS`, `ADMIN_INTENTOS_GLOBALES` y pega el contenido de `env/firma-api.env-agregar`.
-4. Limpia `firma-api/bootstrap/cache/` (o `php artisan optimize:clear`).
-5. Prueba `https://firma.juarezcampos.net/historial`: debe llevarte a identidad. Firmar y Verificar siguen públicos.
+- [ ] Crea el dominio `panel.juarezcampos.net` con raíz `/home/juarezc/panel.juarezcampos.net` y corre **AutoSSL**.
+- [ ] Sube y extrae `2-panel-panel.juarezcampos.net.zip` en `/home/juarezc/`.
+- [ ] Abre `https://panel.juarezcampos.net` → te lleva a identidad → ingresa con el correo y la contraseña de `CREDENCIALES.txt`.
+- [ ] **Cambia tu contraseña**: Usuarios → tu usuario → Cambiar contraseña.
 
-## Dar acceso a más personas
+---
 
-Todo desde el panel: **Usuarios → Nuevo usuario** y en su ficha **Acceso a sistemas** → sistema + rol.
-Sin acceso a un sistema, el usuario no entra aunque su contraseña sea correcta.
+## 3. ISTQB — `https://juarezcampos.net/istqb`
 
-## Si algo falla
+### 3.1 Base de datos (una sola vez)
+- [ ] phpMyAdmin → `juarezc_istqb_exam` → **Importar** `sql/istqb-agregar-identidad.sql`.
 
-Los errores nunca muestran detalles técnicos: el usuario ve un mensaje y una referencia como `E-7KQ2M9XA`.
-Búscala en `identidad-api/storage/logs/laravel.log` (o en `istqb-api-app/…` / `firma-api/…`) para ver el detalle.
+> **¿Qué valor lleva `identidad_sub`?** Ninguno: se crea **vacía (NULL) a propósito**.
+> La primera vez que cada administrador entra a ISTQB por identidad, ISTQB lo busca por su correo y llena
+> `identidad_sub` solo (es el UUID de su usuario en identidad). Por eso tu correo en identidad debe ser el mismo
+> que tenía tu usuario en ISTQB (`romeosoftjuarez@gmail.com`). Si ya existe la columna, no la vuelvas a agregar.
+
+### 3.2 Archivos
+- [ ] Sube y extrae `3-istqb-juarezcampos.net.zip` en `/home/juarezc/`: reemplaza `public_html/istqb/` y el código de `istqb-api-app/` (cuando pregunte, **sobrescribir**). No trae `.env` ni `storage/`, así que tus datos e imágenes no se tocan.
+- [ ] Abre `/home/juarezc/istqb-api-app/.env` y pega **al final** todo el contenido de `env/istqb-api-app.env-agregar`.
+- [ ] Vacía la carpeta `istqb-api-app/bootstrap/cache/` (borra todo menos `.gitignore`).
+
+### 3.3 Comprobar
+- [ ] `https://juarezcampos.net/istqb/` abre el simulacro sin pedir ingreso.
+- [ ] `https://juarezcampos.net/istqb/admin` te lleva a identidad y vuelve al panel de ISTQB.
+
+---
+
+## 4. Firma — `https://firma.juarezcampos.net`
+
+- [ ] Sube y extrae `4-firma-firma.juarezcampos.net.zip` en `/home/juarezc/` (sobrescribir). No trae `.env`, base SQLite ni `storage/`: tus PDFs y registros se conservan.
+- [ ] En `/home/juarezc/firma-api/.env` **borra** las líneas `ADMIN_CLAVE`, `ADMIN_SESION_MINUTOS`, `ADMIN_INTENTOS`, `ADMIN_BLOQUEO_MINUTOS`, `ADMIN_INTENTOS_GLOBALES` y pega al final el contenido de `env/firma-api.env-agregar`.
+- [ ] Vacía `firma-api/bootstrap/cache/` (menos `.gitignore`).
+- [ ] `https://firma.juarezcampos.net/historial` te lleva a identidad. Firmar y Verificar siguen sin pedir ingreso.
+
+---
+
+## 5. Si algo falla
+
+Las pantallas nunca muestran detalles técnicos: muestran una **referencia** como `E-HBK8FZIB`.
+
+1. Administrador de archivos → `/home/juarezc/identidad-api/storage/logs/laravel.log` (o `istqb-api-app/…`, `firma-api/…`).
+2. Clic derecho → **Editar** (o Ver) y busca la referencia con Ctrl+F.
+3. Esa línea dice la causa real. Envíala a quien te dé soporte.
+
+| Síntoma | Causa habitual | Solución |
+| --- | --- | --- |
+| «No pudimos iniciar el ingreso» con referencia al abrir el panel | Llaves de Passport con permisos `644` (paquetes anteriores) | Ver sección 6 |
+| El log dice `Access denied for user` | `DB_USERNAME`/`DB_PASSWORD` mal o el usuario no está agregado a la base | Revisa 1.2 y 1.5 |
+| El log dice `Table ... doesn't exist` | No se importó `juarezc_panel.sql` o se importó en otra base | Revisa 1.2 |
+| El log dice `Permission denied` en `storage` | PHP no puede escribir | Permisos `755` en `identidad-api/storage` y `bootstrap/cache` |
+| La pantalla de ingreso sale sin estilos | Front de un paquete anterior | Ver sección 6 |
+| No llega el código de 6 dígitos | Datos SMTP | Revisa 1.3 y `MAIL_*` en el `.env`; mira el log |
+
+---
+
+## 6. Si ya subiste el paquete anterior (sin estilos / error al abrir el panel)
+
+El paquete anterior tenía dos fallas:
+- el login se cargaba sin estilos;
+- las llaves `storage/oauth-*.key` quedaban con permisos `644`, que la librería OAuth rechaza en Linux, y el ingreso fallaba con una referencia `E-…`.
+
+Corrígelo así, **sin tocar la base**:
+
+- [ ] **Llaves** (elige una):
+  - **Rápido**: Administrador de archivos → `identidad-api/storage/` → clic derecho en `oauth-private.key` → **Change Permissions** → `600`. Haz lo mismo con `oauth-public.key`.
+  - **Definitivo**: del `.env` del zip nuevo copia el bloque `PASSPORT_PRIVATE_KEY="…"` y `PASSPORT_PUBLIC_KEY="…"` (varias líneas cada uno, con sus comillas) al final de tu `identidad-api/.env`, y borra `storage/oauth-private.key` y `storage/oauth-public.key`. Son las mismas llaves de esos archivos (vienen del mismo paquete), solo cambia dónde se guardan.
+- [ ] **Estilos**: borra el contenido de `/home/juarezc/identidad.juarezcampos.net/` **excepto** `laravel.php`, y sube ahí el contenido de la carpeta `identidad.juarezcampos.net/` del zip nuevo. Haz lo mismo con `panel.juarezcampos.net/`, conservando tu `config.json`.
+- [ ] Vuelve a probar `https://panel.juarezcampos.net`.

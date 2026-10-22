@@ -46,6 +46,14 @@ copiar_laravel() {
   # storage/: solo la estructura vacía
   find "$destino/storage" -type f ! -name .gitignore -delete 2>/dev/null || true
 }
+llaves_al_env() {
+  (cd "$1" && php -r '
+    $priv = trim(file_get_contents("storage/oauth-private.key"));
+    $pub = trim(file_get_contents("storage/oauth-public.key"));
+    file_put_contents(".env", "\n# Llaves RSA de Passport (firman los JWT). Confidenciales.\nPASSPORT_PRIVATE_KEY=\"$priv\"\nPASSPORT_PUBLIC_KEY=\"$pub\"\n", FILE_APPEND);
+    unlink("storage/oauth-private.key");
+    unlink("storage/oauth-public.key");')
+}
 composer_produccion() { (cd "$1" && $COMPOSER_CMD install --no-dev --optimize-autoloader --no-interaction --no-progress >/dev/null); }
 compilar_angular() {
   (cd "$BASE/$1" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npx ng build --configuration production "${@:2}" >/dev/null)
@@ -117,6 +125,9 @@ sed -e "s|^APP_ENV=.*|APP_ENV=production|" -e "s|^APP_DEBUG=.*|APP_DEBUG=false|"
     "$BASE/identidad/.env.example" > "$C/identidad-api/.env"
 printf '\nSESSION_SECURE_COOKIE=true\n' >> "$C/identidad-api/.env"
 (cd "$C/identidad-api" && php artisan key:generate --force -q && php artisan passport:keys --force -q)
+# Llaves RSA dentro del .env: en Linux, Passport rechaza archivos de llave con permisos 644 (los que deja
+# el extractor de cPanel) y /authorize fallaría con error 500. Como texto en el .env no se revisan permisos.
+llaves_al_env "$C/identidad-api"
 find "$C/identidad-api/storage/logs" -type f ! -name .gitignore -delete
 
 # ------------------------------------------------------------------ 3. Panel
