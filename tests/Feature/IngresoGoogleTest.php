@@ -59,6 +59,16 @@ class IngresoGoogleTest extends TestCase
         $this->getJson('/api/metodos')->assertOk()->assertJsonPath('google', false);
     }
 
+    public function test_sin_google_configurado_vuelve_a_la_misma_pantalla_con_aviso(): void
+    {
+        config(['services.google.client_id' => null]);
+
+        $this->get('/api/google/redirect?retorno='.urlencode('/authorize?client_id=abc'))
+            ->assertRedirect('/authorize?client_id=abc&google=no_disponible');
+        $this->get('/api/google/redirect?retorno='.urlencode('https://atacante.example'))
+            ->assertRedirect('/login?google=no_disponible');
+    }
+
     public function test_redirect_va_a_google_y_guarda_solo_retornos_propios(): void
     {
         $r = $this->get('/api/google/redirect?retorno='.urlencode('/authorize?client_id=x&state=y'));

@@ -43,7 +43,7 @@ class GoogleController extends Controller
     public function redirigir(Request $request): RedirectResponse
     {
         if (! self::habilitado()) {
-            return $this->irA('/login?google=no_disponible');
+            return $this->volver(self::retornoSeguro(is_string($request->query('retorno')) ? $request->query('retorno') : null), 'no_disponible');
         }
 
         $datos = $request->validate([
