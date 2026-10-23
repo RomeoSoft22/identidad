@@ -28,6 +28,15 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Ingreso con Google (Google Cloud Console → Credenciales → ID de cliente OAuth "Aplicación web").
+    // URI de redireccionamiento autorizada: https://identidad.juarezcampos.net/api/google/callback
+    // Sin client_id el botón no aparece en el login.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

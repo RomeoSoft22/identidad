@@ -23,6 +23,9 @@ return [
     'codigo_intentos' => (int) env('IDENTIDAD_CODIGO_INTENTOS', 5),
     'codigo_por_hora' => (int) env('IDENTIDAD_CODIGO_POR_HORA', 5), // envíos máximos por usuario y hora
 
+    // Dirección del panel, para el enlace del correo que avisa de una solicitud de acceso con Google.
+    'panel_url' => env('IDENTIDAD_PANEL_URL', 'https://panel.juarezcampos.net'),
+
     // Código del sistema del panel de administración: su rol ADMIN habilita /api/admin.
     'sistema_panel' => env('IDENTIDAD_SISTEMA_PANEL', 'PANEL'),
 

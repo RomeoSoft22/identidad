@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\AccesoAprobado;
 use App\Models\EventoAuditoria;
 use App\Models\Matricula;
+use App\Models\Rol;
 use App\Models\SesionSso;
 use App\Models\Usuario;
 use App\Support\Auditoria;
@@ -12,8 +14,12 @@ use App\Support\Bloqueo;
 use App\Support\SesionesSso;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 /**
  * Usuarios de todos los sistemas: alta, edición, baja, desbloqueo y cambio de contraseña.
@@ -94,6 +100,9 @@ class UsuarioController extends Controller
         ], $this->mensajes());
         $admin = $request->attributes->get('admin');
 
+        if (isset($datos['estado']) && $usuario->estado === Usuario::PENDIENTE) {
+            return response()->json(['message' => 'Es una solicitud pendiente: apruébala o recházala.'], 422);
+        }
         if (($datos['estado'] ?? null) === Usuario::BAJA && $usuario->is($admin)) {
             return response()->json(['message' => 'No puedes darte de baja a ti mismo.'], 422);
         }
@@ -107,6 +116,57 @@ class UsuarioController extends Controller
             SesionesSso::cerrarTodas($usuario, SesionSso::CIERRE_REVOCADA);
         }
         Auditoria::registrar(EventoAuditoria::USUARIO_ACTUALIZADO, $usuario, actor: $admin, detalle: ['campos' => array_keys($datos)]);
+
+        return response()->json(['data' => $this->datos($usuario->load('matriculas'))]);
+    }
+
+    /**
+     * Aprueba una solicitud de acceso hecha con Google. Opcionalmente asigna de una vez los roles
+     * (matrículas) y avisa por correo al usuario.
+     */
+    public function aprobar(Request $request, Usuario $usuario): JsonResponse
+    {
+        if ($usuario->estado !== Usuario::PENDIENTE) {
+            return response()->json(['message' => 'Este usuario no tiene una solicitud pendiente.'], 422);
+        }
+        $datos = $request->validate([
+            'roles' => ['sometimes', 'array', 'max:20'],
+            'roles.*' => ['integer', Rule::exists('roles', 'id')],
+        ]);
+        $admin = $request->attributes->get('admin');
+
+        DB::transaction(function () use ($usuario, $datos, $admin) {
+            $usuario->forceFill(['estado' => Usuario::ACTIVO, 'aprobado_por' => $admin->id, 'aprobado_en' => now()])->save();
+            foreach (Rol::whereIn('id', $datos['roles'] ?? [])->get() as $rol) {
+                Matricula::updateOrCreate(
+                    ['usuario_id' => $usuario->id, 'sistema_id' => $rol->sistema_id, 'rol_id' => $rol->id],
+                    ['estado' => Matricula::ACTIVA, 'vigente_desde' => null, 'vigente_hasta' => null, 'creado_por' => $admin->id],
+                );
+            }
+        });
+        Auditoria::registrar(EventoAuditoria::USUARIO_APROBADO, $usuario, actor: $admin, detalle: ['roles' => $datos['roles'] ?? []]);
+
+        $usuario->load('matriculas.sistema:id,codigo,nombre', 'matriculas.rol:id,codigo,nombre');
+        try {
+            Mail::to($usuario->correo)->send(new AccesoAprobado(
+                $usuario->nombres,
+                $usuario->matriculas->where('estado', Matricula::ACTIVA)->map(fn (Matricula $m) => $m->sistema?->nombre)->filter()->unique()->values()->all(),
+            ));
+        } catch (Throwable $e) {
+            Log::warning('No se pudo avisar la aprobación: '.$e->getMessage());
+        }
+
+        return response()->json(['data' => $this->datos($usuario)]);
+    }
+
+    /** Rechaza una solicitud: la cuenta queda de baja y no puede volver a pedir acceso con Google. */
+    public function rechazar(Request $request, Usuario $usuario): JsonResponse
+    {
+        if ($usuario->estado !== Usuario::PENDIENTE) {
+            return response()->json(['message' => 'Este usuario no tiene una solicitud pendiente.'], 422);
+        }
+        $usuario->forceFill(['estado' => Usuario::BAJA])->save();
+        Auditoria::registrar(EventoAuditoria::USUARIO_RECHAZADO, $usuario, actor: $request->attributes->get('admin'));
 
         return response()->json(['data' => $this->datos($usuario->load('matriculas'))]);
     }
@@ -161,6 +221,9 @@ class UsuarioController extends Controller
             'ultimo_ingreso_en' => $u->ultimo_ingreso_en,
             'ultima_ip' => $u->ultima_ip,
             'creado_en' => $u->creado_en,
+            'origen' => $u->origen,
+            'con_google' => $u->google_sub !== null,
+            'aprobado_en' => $u->aprobado_en,
             'matriculas' => $u->matriculas->map(fn (Matricula $m) => [
                 'id' => $m->id,
                 'sistema' => $m->sistema?->only(['id', 'codigo', 'nombre']),

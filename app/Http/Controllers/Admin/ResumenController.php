@@ -22,6 +22,7 @@ class ResumenController extends Controller
             'admin' => ['nombre' => $admin->nombreCompleto(), 'correo' => $admin->correo],
             'usuarios' => Usuario::count(),
             'bloqueados' => Usuario::where('estado', Usuario::BLOQUEADO)->count(),
+            'pendientes' => Usuario::where('estado', Usuario::PENDIENTE)->count(),
             'sistemas' => Sistema::where('activo', true)->count(),
             'sesiones_abiertas' => SesionSso::abiertas()->where('expira_en', '>', now())->count(),
             'ingresos_hoy' => Acceso::where('creado_en', '>=', today())->count(),

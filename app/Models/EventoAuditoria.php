@@ -30,6 +30,13 @@ class EventoAuditoria extends Model
 
     public const LOGOUT = 'logout';
 
+    /** Alguien sin cuenta entró con Google: queda pendiente de aprobación. */
+    public const SOLICITUD_ACCESO = 'solicitud_acceso';
+
+    public const USUARIO_APROBADO = 'usuario_aprobado';
+
+    public const USUARIO_RECHAZADO = 'usuario_rechazado';
+
     public const CODIGO_ENVIADO = 'codigo_enviado';
 
     public const CODIGO_INCORRECTO = 'codigo_incorrecto';
@@ -89,6 +96,9 @@ class EventoAuditoria extends Model
         self::ROL_ELIMINADO => self::INFO,
         self::MATRICULA_ASIGNADA => self::INFO,
         self::MATRICULA_ACTUALIZADA => self::INFO,
+        self::SOLICITUD_ACCESO => self::INFO,
+        self::USUARIO_APROBADO => self::INFO,
+        self::USUARIO_RECHAZADO => self::INFO,
     ];
 
     public const UPDATED_AT = null;

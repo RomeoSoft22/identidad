@@ -64,6 +64,21 @@ class SesionesSso
         return $sesion;
     }
 
+    /**
+     * Completa un ingreso ya verificado (contraseña, código de correo o Google): abre la sesión del
+     * navegador y la sesión SSO, y lo registra en la auditoría con el método usado.
+     */
+    public static function ingresar(Usuario $usuario, Request $request, ?string $zonaHoraria, ?string $idioma, string $metodo = 'contrasena'): SesionSso
+    {
+        $usuario->forceFill(['intentos_fallidos' => 0])->save();
+        Auth::login($usuario);
+        $request->session()->regenerate();
+        $sesion = self::iniciar($usuario, $request, $zonaHoraria, $idioma);
+        Auditoria::registrar(EventoAuditoria::LOGIN_EXITOSO, $usuario, sesion: $sesion, detalle: ['metodo' => $metodo]);
+
+        return $sesion;
+    }
+
     /** Sesión SSO de la petición actual, si hay una abierta en esta cookie. */
     public static function actual(): ?SesionSso
     {

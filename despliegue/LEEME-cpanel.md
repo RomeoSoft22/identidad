@@ -184,3 +184,62 @@ Comprobación en phpMyAdmin (`juarezc_panel` → SQL): debe mostrar tus 3 acceso
 SELECT s.codigo AS sistema, r.codigo AS rol, m.estado, m.vigente_desde, m.vigente_hasta
 FROM matriculas m JOIN sistemas s ON s.id = m.sistema_id JOIN roles r ON r.id = m.rol_id;
 ```
+
+---
+
+## 8. Ingreso con Google (actualización del 23/10/2026)
+
+En el login aparece **«Continuar con Google»** (debajo de un separador «o»). Funciona así:
+
+| Situación | Qué pasa |
+| --- | --- |
+| La persona ya tiene cuenta activa (creada en el panel o aprobada) | Entra. Si su correo coincide con una cuenta creada con contraseña, esa cuenta queda vinculada a su Google. Solo verá los sistemas donde tenga matrícula. |
+| No tiene cuenta | Se crea una **solicitud pendiente**, llega un correo a los administradores del panel y la persona ve «Recibimos tu solicitud…». No entra a ningún sistema. |
+| Solicitud pendiente, rechazada, de baja o bloqueada | No entra; ve un mensaje claro. |
+
+Las solicitudes se aprueban en el panel: **Resumen → Solicitudes por aprobar** (o Usuarios → filtro «Solicitudes pendientes») → abrir la persona → marcar los sistemas/roles → **Aprobar**. Al aprobar, se le avisa por correo.
+
+### 8.1 Crear las credenciales en Google (una sola vez)
+
+- [ ] Entra a <https://console.cloud.google.com> con la cuenta de Google que administrará esto y crea un proyecto (por ejemplo «Juarez Campos Identidad»).
+- [ ] **Google Auth Platform → Branding** (o «Pantalla de consentimiento de OAuth»):
+  - Nombre de la app: `Juarez Campos`. Correo de asistencia: el tuyo.
+  - **Dominios autorizados**: `juarezcampos.net`.
+  - Tipo de usuario / **Audience**: **Externo**.
+- [ ] **Data access / Permisos**: solo `openid`, `.../auth/userinfo.email` y `.../auth/userinfo.profile` (no requieren verificación de Google).
+- [ ] **Audience → Publicar la app** (estado «En producción»). Si queda «En prueba», solo podrán entrar los correos que agregues como usuarios de prueba.
+- [ ] **Clients / Credenciales → Crear ID de cliente OAuth** → tipo **Aplicación web**:
+  - Orígenes de JavaScript autorizados: `https://identidad.juarezcampos.net`
+  - **URI de redireccionamiento autorizados**: `https://identidad.juarezcampos.net/api/google/callback`
+  - (Opcional, para pruebas en tu PC: `http://localhost:4300/api/google/callback`)
+- [ ] Copia el **ID de cliente** y el **Secreto del cliente**.
+
+### 8.2 Actualizar el servidor (sin perder datos)
+
+Usa el paquete `actualizacion-google-<fecha>/`:
+
+- [ ] **Base**: phpMyAdmin → `juarezc_panel` → SQL → ejecuta `sql/2026_10_23-ingreso-google.sql` (una sola vez).
+- [ ] **API**: sube y extrae `1-identidad-api.zip` en `/home/juarezc/` (sobrescribir). No trae `.env` ni `storage/`.
+- [ ] **Pantallas**: sube y extrae `2-identidad-web.zip` y `3-panel-web.zip` en `/home/juarezc/` (sobrescribir). No traen `laravel.php` ni `config.json`, así que se conservan los tuyos.
+- [ ] **`.env`**: al final de `/home/juarezc/identidad-api/.env` agrega (con tus valores de 8.1):
+  ```
+  GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET=xxxxxxxx
+  GOOGLE_REDIRECT_URI=https://identidad.juarezcampos.net/api/google/callback
+  IDENTIDAD_PANEL_URL=https://panel.juarezcampos.net
+  ```
+- [ ] Vacía `identidad-api/bootstrap/cache/` (todo menos `.gitignore`).
+
+### 8.3 Comprobar
+
+- [ ] `https://identidad.juarezcampos.net/api/metodos` → `{"google":true}` (si dice `false`, falta algún `GOOGLE_*` en el `.env`).
+- [ ] El login muestra el separador «o» y el botón **Continuar con Google**.
+- [ ] Con un Gmail que **no** esté registrado: aparece «Recibimos tu solicitud…» y te llega el correo de aviso.
+- [ ] En el panel la solicitud aparece en el Resumen; apruébala con un sistema y vuelve a entrar con ese Gmail.
+
+| Síntoma | Causa | Solución |
+| --- | --- | --- |
+| Google muestra «Error 400: redirect_uri_mismatch» | La URI de 8.1 no coincide exactamente | Debe ser `https://identidad.juarezcampos.net/api/google/callback` (https, sin `/` final) en Google y en `GOOGLE_REDIRECT_URI` |
+| Google dice «Acceso bloqueado: la app no completó la verificación» o solo entran algunos correos | La app sigue «En prueba» | Google Auth Platform → Audience → **Publicar app** |
+| «No pudimos completar el ingreso con Google» | Secreto incorrecto o sesión vencida | Revisa `GOOGLE_CLIENT_SECRET`; busca la causa en `storage/logs/laravel.log` (línea «Google rechazó…») |
+| No llega el correo de aviso a los administradores | SMTP | Mismos datos `MAIL_*` del código de desbloqueo (sección 1.3) |

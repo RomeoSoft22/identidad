@@ -20,17 +20,29 @@ class Usuario extends Authenticatable
     use HasFactory, Notifiable, SoftDeletes;
 
     public const ACTIVO = 'activo';
+
     public const BLOQUEADO = 'bloqueado';
+
     public const BAJA = 'baja';
 
+    /** Se registró con Google y espera que un administrador lo apruebe en el panel. */
+    public const PENDIENTE = 'pendiente';
+
+    public const ORIGEN_PANEL = 'panel';
+
+    public const ORIGEN_GOOGLE = 'google';
+
     public const CREATED_AT = 'creado_en';
+
     public const UPDATED_AT = 'actualizado_en';
+
     public const DELETED_AT = 'eliminado_en';
 
     protected $table = 'usuarios';
 
     // Columnas en español que Laravel usa para autenticar.
     protected $authPasswordName = 'contrasena';
+
     protected $rememberTokenName = 'token_recordar';
 
     protected static function booted(): void
@@ -53,6 +65,7 @@ class Usuario extends Authenticatable
             'bloqueado_en' => 'datetime',
             'contrasena_cambiada_en' => 'datetime',
             'ultimo_ingreso_en' => 'datetime',
+            'aprobado_en' => 'datetime',
             'intentos_fallidos' => 'integer',
             'debe_cambiar_contrasena' => 'boolean',
             'contrasena' => 'hashed',

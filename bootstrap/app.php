@@ -44,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 Route::post('/usuarios', [UsuarioController::class, 'store']);
                 Route::get('/usuarios/{usuario}', [UsuarioController::class, 'show']);
                 Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update']);
+                Route::post('/usuarios/{usuario}/aprobar', [UsuarioController::class, 'aprobar']);
+                Route::post('/usuarios/{usuario}/rechazar', [UsuarioController::class, 'rechazar']);
                 Route::post('/usuarios/{usuario}/desbloquear', [UsuarioController::class, 'desbloquear']);
                 Route::post('/usuarios/{usuario}/contrasena', [UsuarioController::class, 'cambiarContrasena']);
                 Route::post('/usuarios/{usuario}/cerrar-sesiones', [UsuarioController::class, 'cerrarSesiones']);

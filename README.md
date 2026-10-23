@@ -11,6 +11,7 @@ Base de datos: MySQL `juarezc_panel`, con tablas en español (ver *Modelo de dat
 | Ruta | Uso |
 |---|---|
 | `GET /api/sesion` · `POST /api/login` · `POST /api/login/verificar` · `POST /api/logout` | Los usa identidad-web (cookie de sesión SSO + CSRF). `verificar` recibe el código de 6 dígitos enviado al correo. |
+| `GET /api/metodos` · `GET /api/google/redirect` · `GET /api/google/callback` | Ingreso con Google (navegación completa, no XHR). Quien no tiene cuenta queda como solicitud **pendiente** hasta que un administrador la apruebe en el panel. |
 | `GET /api/authorize` | Equivalente JSON de `/oauth/authorize`: devuelve a dónde volver con el código, o pide login, o responde "sin acceso". |
 | `POST /api/oauth/token` | Canje del código o del refresh token. Clientes con secreto (ISTQB, FIRMA) o públicos con PKCE (PANEL). |
 | `GET /api/jwks.json` · `GET /api/.well-known/openid-configuration` | Llave pública (JWK) y documento de descubrimiento. |
@@ -29,6 +30,7 @@ Cabecera: `alg: RS256` y `kid` (huella RFC 7638 de la llave; cambia sola al rota
 
 - Tras 10 fallos de contraseña consecutivos la cuenta se bloquea y se revocan sus tokens y sesiones. **El atacante no se entera**: recibe siempre el mismo mensaje genérico.
 - Si una cuenta bloqueada ingresa la contraseña correcta, se envía un **código de 6 dígitos al correo** (vence en 10 minutos, 5 intentos, máximo 5 envíos por hora y solo se guarda su hash). Con el código la cuenta se desbloquea y se completa el ingreso. Un administrador también puede desbloquearla desde el panel.
+- **Ingreso con Google**: solo correos verificados por Google; la cuenta se vincula por el identificador de Google (`google_sub`). Quien no tiene cuenta queda `pendiente` (no entra a nada) y se avisa por correo a los administradores del panel; al aprobarla se le avisa a la persona. Configuración: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (ver `despliegue/LEEME-cpanel.md`, sección 8). Sin ellas el botón no aparece.
 - Límite de 20 intentos de login por IP y por minuto. El mensaje de error no revela si el correo existe.
 - Cada emisión de token (canje y renovación) vuelve a comprobar cuenta activa y matrícula vigente. Los refresh tokens rotan en cada uso.
 - **Errores**: ninguna respuesta incluye SQL, tablas, clases, motor de base de datos ni framework, aun con `APP_DEBUG=true` (`app/Exceptions/ErroresSeguros.php`). El usuario ve un mensaje claro y una referencia (`E-XXXXXXXX`); el detalle queda en `storage/logs` con esa referencia.

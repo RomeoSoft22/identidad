@@ -13,7 +13,6 @@ use App\Support\SesionesSso;
 use App\Support\VerificacionCorreo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -71,8 +70,8 @@ class SesionController extends Controller
         // Mismo trabajo de hash exista o no el correo, para no revelar qué cuentas existen por el tiempo de respuesta.
         $passwordCorrecta = Hash::check($datos['password'], $user?->contrasena ?? '$2y$12$'.str_repeat('x', 53));
 
-        if (! $user || $user->estado === Usuario::BAJA) {
-            Auditoria::registrar(EventoAuditoria::LOGIN_FALLIDO, $user, correo: $email, detalle: ['motivo' => $user ? 'baja' : 'no_existe']);
+        if (! $user || in_array($user->estado, [Usuario::BAJA, Usuario::PENDIENTE], true)) {
+            Auditoria::registrar(EventoAuditoria::LOGIN_FALLIDO, $user, correo: $email, detalle: ['motivo' => $user?->estado ?? 'no_existe']);
 
             return $this->error('credenciales', self::ERROR_GENERICO);
         }
@@ -137,7 +136,7 @@ class SesionController extends Controller
 
     private function desbloquearEIngresar(Usuario $user, Request $request, array $contexto): JsonResponse
     {
-        if ($user->estado === Usuario::BAJA) {
+        if ($user->estado !== Usuario::ACTIVO && ! $user->estaBloqueado()) {
             return $this->error('credenciales', self::ERROR_GENERICO);
         }
         if ($user->estaBloqueado()) {
@@ -149,11 +148,7 @@ class SesionController extends Controller
 
     private function completarIngreso(Usuario $user, Request $request, array $contexto): JsonResponse
     {
-        $user->forceFill(['intentos_fallidos' => 0])->save();
-        Auth::login($user);
-        $request->session()->regenerate();
-        $sesion = SesionesSso::iniciar($user, $request, $contexto['zona_horaria'] ?? null, $contexto['idioma'] ?? null);
-        Auditoria::registrar(EventoAuditoria::LOGIN_EXITOSO, $user, sesion: $sesion);
+        SesionesSso::ingresar($user, $request, $contexto['zona_horaria'] ?? null, $contexto['idioma'] ?? null);
 
         return response()->json(['usuario' => $this->usuario($user)]);
     }
