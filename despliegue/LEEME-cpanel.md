@@ -218,7 +218,7 @@ Las solicitudes se aprueban en el panel: **Resumen → Solicitudes por aprobar**
 
 Usa el paquete `actualizacion-google-<fecha>/`:
 
-- [ ] **Base**: phpMyAdmin → `juarezc_panel` → SQL → ejecuta `sql/2026_10_23-ingreso-google.sql` (una sola vez).
+- [ ] **Base**: phpMyAdmin → `juarezc_panel` → SQL → ejecuta `sql/2026_10_23-ingreso-google.sql` (una sola vez). Solo agrega 4 columnas a `usuarios`: **no** vuelvas a importar `juarezc_panel.sql` ni se pierden tus datos. Para saber si ya se aplicó: `SHOW COLUMNS FROM usuarios LIKE 'google_sub';` (si devuelve una fila, ya está).
 - [ ] **API**: sube y extrae `1-identidad-api.zip` en `/home/juarezc/` (sobrescribir). No trae `.env` ni `storage/`.
 - [ ] **Pantallas**: sube y extrae `2-identidad-web.zip` y `3-panel-web.zip` en `/home/juarezc/` (sobrescribir). No traen `laravel.php` ni `config.json`, así que se conservan los tuyos.
 - [ ] **`.env`**: al final de `/home/juarezc/identidad-api/.env` agrega (con tus valores de 8.1):
@@ -228,7 +228,7 @@ Usa el paquete `actualizacion-google-<fecha>/`:
   GOOGLE_REDIRECT_URI=https://identidad.juarezcampos.net/api/google/callback
   IDENTIDAD_PANEL_URL=https://panel.juarezcampos.net
   ```
-- [ ] Vacía `identidad-api/bootstrap/cache/` (todo menos `.gitignore`).
+- [ ] **Obligatorio**: vacía `identidad-api/bootstrap/cache/` (todo menos `.gitignore`). Si no, Laravel sigue usando las rutas y la configuración anteriores y el botón responde «No encontramos lo que buscas».
 
 ### 8.3 Comprobar
 
@@ -242,4 +242,5 @@ Usa el paquete `actualizacion-google-<fecha>/`:
 | Google muestra «Error 400: redirect_uri_mismatch» | La URI de 8.1 no coincide exactamente | Debe ser `https://identidad.juarezcampos.net/api/google/callback` (https, sin `/` final) en Google y en `GOOGLE_REDIRECT_URI` |
 | Google dice «Acceso bloqueado: la app no completó la verificación» o solo entran algunos correos | La app sigue «En prueba» | Google Auth Platform → Audience → **Publicar app** |
 | «No pudimos completar el ingreso con Google» | Secreto incorrecto o sesión vencida | Revisa `GOOGLE_CLIENT_SECRET`; busca la causa en `storage/logs/laravel.log` (línea «Google rechazó…») |
+| Al pulsar el botón: `{"codigo":"error_solicitud","message":"No encontramos lo que buscas."}` en `/api/google/redirect` | El servidor sigue con las rutas anteriores: caché de Laravel o el zip 1 extraído en otra carpeta | Borra todo en `identidad-api/bootstrap/cache/` menos `.gitignore`; revisa que no exista `identidad-api/identidad-api/` y que `identidad-api/routes/web.php` contenga `google/redirect` |
 | No llega el correo de aviso a los administradores | SMTP | Mismos datos `MAIL_*` del código de desbloqueo (sección 1.3) |
