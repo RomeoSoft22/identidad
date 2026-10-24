@@ -22,9 +22,10 @@ use Throwable;
 /**
  * Ingreso con Google (OpenID Connect). Google solo confirma QUIÉN es la persona; el acceso lo sigue
  * decidiendo identidad:
- *  - cuenta activa (creada en el panel o ya aprobada)  → entra y luego, como siempre, solo a los
- *    sistemas donde tenga matrícula;
- *  - sin cuenta → se registra como "pendiente" y se avisa a los administradores del panel;
+ *  - sin cuenta → se registra como "pendiente" (no habilitada) y se avisa a los administradores del
+ *    panel; la persona ve que su cuenta debe ser aprobada por el administrador;
+ *  - cuenta registrada en el sistema (panel o consola) → debe ingresar con su contraseña, no con Google;
+ *  - cuenta nacida con Google y aprobada → entra y, como siempre, solo a los sistemas donde tenga matrícula;
  *  - pendiente, de baja o bloqueada → no entra.
  *
  * Se llama con navegación completa (no XHR) desde identidad-web: /api/google/redirect → Google →
@@ -96,7 +97,15 @@ class GoogleController extends Controller
         if (! $usuario) {
             $usuario = $this->registrarSolicitud($g, $correo, $sub);
 
-            return $this->volver($retorno, 'pendiente');
+            return $this->volver($retorno, 'registrada');
+        }
+
+        // Regla: una cuenta registrada en el sistema (creada en el panel o por consola) entra con su
+        // contraseña, no con Google. Google solo sirve para las cuentas que nacieron con Google.
+        if ($usuario->origen !== Usuario::ORIGEN_GOOGLE) {
+            Auditoria::registrar(EventoAuditoria::LOGIN_FALLIDO, $usuario, detalle: ['metodo' => 'google', 'motivo' => 'cuenta_con_contrasena']);
+
+            return $this->volver($retorno, 'usar_contrasena');
         }
 
         if ($usuario->google_sub !== null && $usuario->google_sub !== $sub) {
@@ -122,10 +131,6 @@ class GoogleController extends Controller
             Auditoria::registrar(EventoAuditoria::INGRESO_CUENTA_BLOQUEADA, $usuario, detalle: ['metodo' => 'google']);
 
             return $this->volver($retorno, 'bloqueada');
-        }
-
-        if ($usuario->google_sub === null) {
-            $usuario->forceFill(['google_sub' => $sub])->save(); // primera vez con Google: se vincula
         }
 
         SesionesSso::ingresar($usuario, $request, $contexto['zona_horaria'] ?? null, $contexto['idioma'] ?? null, 'google');

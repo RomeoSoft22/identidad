@@ -193,8 +193,9 @@ En el login aparece **«Continuar con Google»** (debajo de un separador «o»).
 
 | Situación | Qué pasa |
 | --- | --- |
-| La persona ya tiene cuenta activa (creada en el panel o aprobada) | Entra. Si su correo coincide con una cuenta creada con contraseña, esa cuenta queda vinculada a su Google. Solo verá los sistemas donde tenga matrícula. |
-| No tiene cuenta | Se crea una **solicitud pendiente**, llega un correo a los administradores del panel y la persona ve «Recibimos tu solicitud…». No entra a ningún sistema. |
+| No tiene cuenta | Se crea la cuenta **deshabilitada** (pendiente), llega un correo a los administradores del panel y la persona ve «Tu cuenta fue registrada, pero todavía no está habilitada. Debe ser aprobada por el administrador del sistema». No entra a ningún sistema. |
+| Ya tiene una cuenta registrada en el sistema (creada en el panel) | **No** entra con Google: ve «Ya tienes una cuenta registrada en el sistema con este correo. Ingresa con tu correo y contraseña». |
+| Su cuenta nació con Google y ya fue aprobada | Entra con Google; solo verá los sistemas donde tenga matrícula. |
 | Solicitud pendiente, rechazada, de baja o bloqueada | No entra; ve un mensaje claro. |
 
 Las solicitudes se aprueban en el panel: **Resumen → Solicitudes por aprobar** (o Usuarios → filtro «Solicitudes pendientes») → abrir la persona → marcar los sistemas/roles → **Aprobar**. Al aprobar, se le avisa por correo.

@@ -89,7 +89,8 @@ class IngresoGoogleTest extends TestCase
         Mail::fake();
         $this->simularGoogle('g-111', 'lucia@gmail.com', 'Lucía', 'Campos');
 
-        $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=pendiente');
+        // Primera vez: se crea la cuenta deshabilitada y se avisa que debe aprobarla el administrador.
+        $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=registrada');
         $this->assertGuest();
 
         $lucia = Usuario::where('correo', 'lucia@gmail.com')->sole();
@@ -133,29 +134,35 @@ class IngresoGoogleTest extends TestCase
         $this->getJson($url)->assertForbidden()->assertJsonPath('codigo', 'sin_acceso');
     }
 
-    public function test_usuario_creado_en_el_panel_queda_vinculado_a_google_por_su_correo(): void
+    public function test_cuenta_registrada_en_el_sistema_debe_ingresar_con_su_contrasena(): void
     {
         $this->simularGoogle('g-333', 'admin@juarezcampos.net', 'Romeo', null);
 
-        $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login');
-        $this->assertAuthenticatedAs($this->admin->fresh());
-        $this->assertSame('g-333', $this->admin->fresh()->google_sub);
+        $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=usar_contrasena');
+        $this->assertGuest();
+        $this->assertNull($this->admin->fresh()->google_sub, 'No se vincula a Google');
+        $this->assertSame(1, Usuario::where('correo', 'admin@juarezcampos.net')->count(), 'No se crea otra cuenta');
+
+        // Con su contraseña sí entra.
+        $this->postJson('/api/login', ['email' => 'admin@juarezcampos.net', 'password' => 'Clave-Segura-123'])->assertOk();
     }
 
     public function test_vuelve_a_la_pantalla_de_autorizacion_con_su_consulta(): void
     {
+        $this->cuentaGoogleAprobada('g-777', 'ana@gmail.com');
         $retorno = '/authorize?client_id=abc&state=xyz';
         $this->get('/api/google/redirect?retorno='.urlencode($retorno));
-        $this->simularGoogle('g-333', 'admin@juarezcampos.net', 'Romeo', null);
+        $this->simularGoogle('g-777', 'ana@gmail.com', 'Ana', null);
 
         $this->get('/api/google/callback?code=c&state=s')->assertRedirect($retorno);
     }
 
     public function test_rechazos(): void
     {
+        $ana = $this->cuentaGoogleAprobada('g-original', 'ana@gmail.com');
+
         // Otra cuenta de Google con el mismo correo no se mezcla con la ya vinculada.
-        $this->admin->forceFill(['google_sub' => 'g-original'])->save();
-        $this->simularGoogle('g-otra', 'admin@juarezcampos.net', 'Romeo', null);
+        $this->simularGoogle('g-otra', 'ana@gmail.com', 'Ana', null);
         $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=error');
         $this->assertGuest();
 
@@ -165,10 +172,10 @@ class IngresoGoogleTest extends TestCase
         $this->assertDatabaseMissing('usuarios', ['correo' => 'nuevo@gmail.com']);
 
         // Cuenta bloqueada o de baja.
-        $this->admin->forceFill(['google_sub' => 'g-555', 'estado' => Usuario::BLOQUEADO])->save();
-        $this->simularGoogle('g-555', 'admin@juarezcampos.net', 'Romeo', null);
+        $ana->forceFill(['estado' => Usuario::BLOQUEADO])->save();
+        $this->simularGoogle('g-original', 'ana@gmail.com', 'Ana', null);
         $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=bloqueada');
-        $this->admin->forceFill(['estado' => Usuario::BAJA])->save();
+        $ana->forceFill(['estado' => Usuario::BAJA])->save();
         $this->get('/api/google/callback?code=c&state=s')->assertRedirect('/login?google=sin_acceso');
         $this->assertGuest();
 
@@ -203,6 +210,15 @@ class IngresoGoogleTest extends TestCase
     }
 
     // ----------------------------------------------------------------- utilidades
+
+    /** Cuenta que nació con Google y ya fue aprobada por un administrador. */
+    private function cuentaGoogleAprobada(string $sub, string $correo): Usuario
+    {
+        $u = new Usuario(['nombres' => 'Ana', 'correo' => $correo, 'contrasena' => Str::password(40)]);
+        $u->forceFill(['google_sub' => $sub, 'origen' => Usuario::ORIGEN_GOOGLE, 'estado' => Usuario::ACTIVO])->save();
+
+        return $u;
+    }
 
     private function simularGoogle(string $sub, string $correo, string $nombre, ?string $apellido, bool $verificado = true): void
     {
